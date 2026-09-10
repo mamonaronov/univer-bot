@@ -12,7 +12,7 @@ import urllib.request
 from html import unescape
 from pathlib import Path
 
-from catalog.html import decode_title, extract_file_links, html_to_telegram
+from catalog.html import decode_title, html_to_telegram, strip_self_and_child_nav
 
 SITE = "https://j-univer.ru"
 USER_AGENT = "univer-bot catalog seed/1.0 (+https://j-univer.ru/)"
@@ -22,6 +22,7 @@ SCHEMA_VERSION = "1"
 SKIP_DEEPER_THAN = (
     "/blog",
     "/form",
+    "/news",
     "/sveden/employees/by_programm",
     "/sveden/employees/list",
     "/sveden/objects",
@@ -31,6 +32,7 @@ SKIP_SLUGS = {
     "ai-orange",
     "blog",
     "form",
+    "news",
     "open-doors",
     "open-doors-sent",
     "app-study-sent",
@@ -39,7 +41,6 @@ SKIP_SLUGS = {
 }
 
 MAX_BODY_CHARS = 12000
-MAX_FILE_LINKS = 10
 
 ROOT_INTRO = (
     "<b>Еврейский университет</b>\n\n"
@@ -117,7 +118,7 @@ def keep_page(item: dict) -> bool:
         if path == prefix or path.startswith(prefix + "/"):
             if path != prefix:
                 return False
-            if prefix in {"/blog", "/form"}:
+            if prefix in {"/blog", "/form", "/news"}:
                 return False
     return True
 
@@ -145,7 +146,7 @@ def _truncate_body(body: str) -> str:
     br = cut.rfind("\n\n")
     if br > MAX_BODY_CHARS // 2:
         cut = cut[:br]
-    return cut.rstrip() + "\n\n<i>Текст сокращён. Полная версия — кнопка «Открыть на сайте».</i>"
+    return cut.rstrip() + "\n\n<i>Текст сокращён.</i>"
 
 
 def split_numbered_sections(title: str, body: str) -> list[tuple[str, str]]:
@@ -185,7 +186,7 @@ CREATE TABLE meta (
 -- Дерево справочника. parent_id пустой — пункты главного меню.
 -- is_visible: 1 показывать в боте, 0 скрыть (удобно снять галочку в DB Browser).
 -- sort_order: меньше значение — выше кнопка.
--- body: HTML Telegram (<b>, <i>, <a href="...">). Пустой body = только меню.
+-- body: HTML Telegram (<b>, <i>, mailto). Пустой body = только меню кнопок.
 -- notes: комментарий редактора, бот его не показывает.
 CREATE TABLE pages (
     id INTEGER PRIMARY KEY,
@@ -198,7 +199,7 @@ CREATE TABLE pages (
     notes TEXT
 );
 
--- Кнопки-ссылки под текстом страницы (сайт, PDF, формы).
+-- Необязательные URL-кнопки, если редактор добавит их вручную.
 CREATE TABLE links (
     id INTEGER PRIMARY KEY,
     page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
@@ -220,8 +221,6 @@ TOP_ORDER = [
     "sveden",
     "contact",
     "nashi-partnery",
-    "open-doors",
-    "news",
 ]
 
 
@@ -262,37 +261,6 @@ def _insert_link(conn: sqlite3.Connection, page_id: int, title: str, url: str, s
     )
 
 
-def _add_source_and_files(
-    conn: sqlite3.Connection,
-    page_id: int,
-    source_url: str | None,
-    raw_html: str,
-    extra: list[tuple[str, str]] | None = None,
-) -> None:
-    order = 0
-    seen: set[str] = set()
-    for title, url in extra or []:
-        if url in seen:
-            continue
-        _insert_link(conn, page_id, title, url, order)
-        seen.add(url)
-        order += 1
-    if source_url:
-        files = extract_file_links(raw_html, source_url)
-        extra_count = 0
-        for title, url in files:
-            if url in seen:
-                continue
-            if extra_count >= MAX_FILE_LINKS:
-                break
-            _insert_link(conn, page_id, title, url, order)
-            seen.add(url)
-            order += 1
-            extra_count += 1
-        if source_url not in seen:
-            _insert_link(conn, page_id, "Открыть на сайте", source_url, order)
-
-
 def build_catalog(conn: sqlite3.Connection, wp_pages: list[dict]) -> None:
     kept = [item for item in wp_pages if keep_page(item)]
     children: dict[int, list[dict]] = {}
@@ -312,11 +280,6 @@ def build_catalog(conn: sqlite3.Connection, wp_pages: list[dict]) -> None:
         notes="Корневое меню. parent_id пустой.",
     )
 
-    extra_links = {
-        "students": [("Личный кабинет студента", "https://j-univer.ru/lk/")],
-        "applicants": [("Заявка на обучение", "https://j-univer.ru/form/app-study/")],
-    }
-
     def sort_key(item: dict) -> tuple[int, str]:
         slug = _slug(item)
         if slug in TOP_ORDER:
@@ -330,9 +293,13 @@ def build_catalog(conn: sqlite3.Connection, wp_pages: list[dict]) -> None:
             title = page_title(item)
             url = str(item.get("link") or "")
             raw = page_html(item)
-            body = html_to_telegram(raw, url)
+            child_titles = [page_title(child) for child in children.get(wp_id, [])]
+            body = strip_self_and_child_nav(
+                html_to_telegram(raw, url),
+                title,
+                child_titles,
+            )
             notes = f"wordpress_id={wp_id}; slug={_slug(item)}"
-            extras = extra_links.get(_slug(item), [])
             sections = split_numbered_sections(title, body)
             if len(sections) == 1:
                 db_id = _insert_page(
@@ -344,7 +311,6 @@ def build_catalog(conn: sqlite3.Connection, wp_pages: list[dict]) -> None:
                     source_url=url,
                     notes=notes,
                 )
-                _add_source_and_files(conn, db_id, url, raw, extras)
             else:
                 overview_body = sections[0][1] if sections[0][0] == title else ""
                 rest = sections[1:] if sections[0][0] == title else sections
@@ -355,14 +321,13 @@ def build_catalog(conn: sqlite3.Connection, wp_pages: list[dict]) -> None:
                     conn,
                     parent_id=db_parent,
                     title=title,
-                    body=overview_body or "Выберите подраздел.",
+                    body=overview_body,
                     sort_order=index,
                     source_url=url,
                     notes=notes,
                 )
-                _add_source_and_files(conn, db_id, url, raw, extras)
                 for sub_index, (sub_title, sub_body) in enumerate(rest, start=1):
-                    sub_id = _insert_page(
+                    _insert_page(
                         conn,
                         parent_id=db_id,
                         title=sub_title,
@@ -371,7 +336,6 @@ def build_catalog(conn: sqlite3.Connection, wp_pages: list[dict]) -> None:
                         source_url=url,
                         notes=f"split from wordpress_id={wp_id}",
                     )
-                    _insert_link(conn, sub_id, "Открыть на сайте", url, 0)
             walk(wp_id, db_id)
 
     walk(0, root_id)

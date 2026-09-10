@@ -6,9 +6,25 @@ import html
 import re
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
-_SKIP_TAGS = {"script", "style", "noscript", "svg", "iframe", "form", "button"}
+_SKIP_TAGS = {
+    "script",
+    "style",
+    "noscript",
+    "svg",
+    "iframe",
+    "form",
+    "button",
+    "input",
+    "textarea",
+    "select",
+    "label",
+    "img",
+    "video",
+    "source",
+    "canvas",
+}
 _BLOCK_TAGS = {
     "p",
     "div",
@@ -41,6 +57,25 @@ _WHITESPACE_RE = re.compile(r"[ \t]+\n")
 _MANY_NL_RE = re.compile(r"\n{3,}")
 _MANY_SPACES_RE = re.compile(r"[ \t]{2,}")
 _PDF_RE = re.compile(r"\.(pdf|docx?|xlsx?|pptx?)(?:$|\?)", re.I)
+_EMPTY_FORMAT_RE = re.compile(r"<(b|i|u|s)>\s*</\1>", re.I)
+_LAYOUT_TOKENS = {
+    "bg",
+    "box",
+    "box-image",
+    "box-text",
+    "box-text-inner",
+    "col",
+    "col-inner",
+    "image",
+    "image-box",
+    "page-box",
+    "page-col",
+    "row",
+    "section-bg",
+    "section-content",
+    "section-title",
+}
+_LAYOUT_LINE_RE = re.compile(r"^[\s.#\-]*[A-Za-z][\w.\s#-]*$")
 
 
 def decode_title(raw: str) -> str:
@@ -48,7 +83,7 @@ def decode_title(raw: str) -> str:
 
 
 def extract_file_links(markup: str, page_url: str) -> list[tuple[str, str]]:
-    soup = BeautifulSoup(markup or "", "html.parser")
+    soup = _prepare_soup(markup)
     found: list[tuple[str, str]] = []
     seen: set[str] = set()
     for tag in soup.find_all("a", href=True):
@@ -62,20 +97,77 @@ def extract_file_links(markup: str, page_url: str) -> list[tuple[str, str]]:
 
 
 def html_to_telegram(markup: str, page_url: str = "") -> str:
-    soup = BeautifulSoup(markup or "", "html.parser")
-    for tag in soup.find_all(_SKIP_TAGS):
-        tag.decompose()
+    soup = _prepare_soup(markup)
     chunks: list[str] = []
     _emit(soup.body if soup.body else soup, chunks, page_url)
     text = "".join(chunks)
     text = html.unescape(text)
+    text = _collapse_empty_format(text)
     text = _MANY_SPACES_RE.sub(" ", text)
     text = _WHITESPACE_RE.sub("\n", text)
+    text = _drop_layout_lines(text)
     text = _MANY_NL_RE.sub("\n\n", text)
     return text.strip()
 
 
+def strip_self_and_child_nav(body: str, title: str, child_titles: list[str]) -> str:
+    """Drop the page heading and child titles copied from site navigation cards."""
+    skip = {_norm_heading(title), *(_norm_heading(item) for item in child_titles)}
+    skip.discard("")
+    kept: list[str] = []
+    for line in body.split("\n"):
+        plain = _norm_heading(line)
+        if plain and plain in skip:
+            continue
+        kept.append(line)
+    return _MANY_NL_RE.sub("\n\n", "\n".join(kept)).strip()
+
+
+def _norm_heading(text: str) -> str:
+    plain = re.sub(r"<[^>]+>", "", text)
+    plain = html.unescape(plain)
+    return re.sub(r"\s+", " ", plain).casefold().strip()
+
+
+def _prepare_soup(markup: str) -> BeautifulSoup:
+    soup = BeautifulSoup(markup or "", "html.parser")
+    for tag in soup.find_all(_SKIP_TAGS):
+        tag.decompose()
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+    return soup
+
+
+def _collapse_empty_format(text: str) -> str:
+    prev = None
+    while prev != text:
+        prev = text
+        text = _EMPTY_FORMAT_RE.sub("", text)
+    return text
+
+
+def _drop_layout_lines(text: str) -> str:
+    kept: list[str] = []
+    for line in text.split("\n"):
+        plain = re.sub(r"<[^>]+>", "", line).strip()
+        if plain and _is_layout_noise(plain):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _is_layout_noise(plain: str) -> bool:
+    if not _LAYOUT_LINE_RE.match(plain):
+        return False
+    tokens = [part.lower() for part in re.split(r"[\s.#]+", plain.strip(".# ")) if part]
+    if not tokens:
+        return True
+    return all(token in _LAYOUT_TOKENS for token in tokens)
+
+
 def _emit(node: Tag | NavigableString, out: list[str], page_url: str) -> None:
+    if isinstance(node, Comment):
+        return
     if isinstance(node, NavigableString):
         text = str(node)
         if not text:
@@ -114,13 +206,19 @@ def _emit(node: Tag | NavigableString, out: list[str], page_url: str) -> None:
         href = (node.get("href") or "").strip()
         if href and page_url:
             href = urljoin(page_url, href)
-        inner = []
+        inner: list[str] = []
         for child in node.children:
             _emit(child, inner, page_url)
-        label = "".join(inner).strip() or href
-        if href and href.startswith(("http://", "https://", "mailto:", "tg://")):
+        label = "".join(inner).strip()
+        title_attr = (node.get("title") or "").strip()
+        if not label or _is_layout_noise(re.sub(r"<[^>]+>", "", label)):
+            label = html.escape(title_attr, quote=False) if title_attr else ""
+        if href.startswith("mailto:"):
+            if not label:
+                label = html.escape(href.replace("mailto:", ""), quote=False)
             out.append(f'<a href="{html.escape(href, quote=True)}">{label}</a>')
-        else:
+            return
+        if label:
             out.append(label)
         return
     if name in {"b", "strong"}:
