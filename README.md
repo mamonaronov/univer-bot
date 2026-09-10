@@ -12,7 +12,7 @@ Telegram-бот с кнопками по материалам [j-univer.ru](http
 git clone <url> univer-bot
 cd univer-bot
 cp .env.example .env
-# впишите BOT_TOKEN от @BotFather
+# впишите BOT_TOKEN от бота в файл .env
 
 docker compose up -d --build
 ```
