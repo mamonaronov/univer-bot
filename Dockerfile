@@ -35,7 +35,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 COPY deploy/mihomo/config.yaml /app/mihomo/config.yaml
-COPY data/catalog.sqlite3 /app/catalog.seed.sqlite3
 
 RUN useradd --create-home --uid 1000 botuser \
     && mkdir -p /app/data /app/mihomo/providers \

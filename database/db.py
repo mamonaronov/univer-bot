@@ -1,9 +1,8 @@
-"""SQLite catalog: WAL, copy seed if the volume is empty."""
+"""SQLite catalog: WAL. The handbook lives in data/catalog.sqlite3 in the repo."""
 
 from __future__ import annotations
 
 import logging
-import shutil
 from pathlib import Path
 
 import aiosqlite
@@ -15,17 +14,13 @@ class CatalogError(RuntimeError):
     pass
 
 
-def ensure_catalog(db_path: Path, seed_path: Path) -> None:
+def ensure_catalog(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     if db_path.exists() and db_path.stat().st_size > 0:
         return
-    if seed_path.exists() and seed_path.stat().st_size > 0:
-        shutil.copy2(seed_path, db_path)
-        logger.info("Copied seed catalog to %s", db_path)
-        return
     raise CatalogError(
-        f"Catalog DB is missing ({db_path}) and no seed file found at {seed_path}. "
-        "Run: python -m catalog.seed"
+        f"Catalog DB is missing ({db_path}). "
+        "It should be in the repository as data/catalog.sqlite3."
     )
 
 

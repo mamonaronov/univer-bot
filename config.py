@@ -45,7 +45,6 @@ def _path(name: str, default: Path) -> Path:
 class Config:
     bot_token: str
     db_path: Path
-    seed_db_path: Path
     log_level: str
     telegram_proxy_url: str | None
     probe_interval_seconds: int
@@ -77,7 +76,6 @@ def load_config() -> Config:
     return Config(
         bot_token=token,
         db_path=_path("DB_PATH", PROJECT_ROOT / "data/catalog.sqlite3"),
-        seed_db_path=_path("SEED_DB_PATH", PROJECT_ROOT / "data/catalog.sqlite3"),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         telegram_proxy_url=_optional("TELEGRAM_PROXY_URL"),
         probe_interval_seconds=max(5, _int("PROBE_INTERVAL_SECONDS", 30)),

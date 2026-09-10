@@ -6,14 +6,15 @@ from pathlib import Path
 import pytest
 
 from catalog.seed import SCHEMA, _insert_link, _insert_page
-from database.db import Database, ensure_catalog
+from database.db import CatalogError, Database, ensure_catalog
 from database.queries import Catalog
 
 
-def test_ensure_catalog_copies_seed(tmp_path: Path):
-    seed = tmp_path / "seed.sqlite3"
+def test_ensure_catalog_requires_file(tmp_path: Path):
     db_path = tmp_path / "catalog.sqlite3"
-    conn = sqlite3.connect(seed)
+    with pytest.raises(CatalogError, match="missing"):
+        ensure_catalog(db_path)
+    conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
     _insert_page(
         conn,
@@ -23,12 +24,9 @@ def test_ensure_catalog_copies_seed(tmp_path: Path):
         sort_order=0,
         source_url="https://j-univer.ru/",
     )
-    conn.execute("INSERT INTO meta(key, value) VALUES ('root_page_id', '1')")
     conn.commit()
     conn.close()
-    ensure_catalog(db_path, seed)
-    assert db_path.exists()
-    ensure_catalog(db_path, seed)
+    ensure_catalog(db_path)
 
 
 @pytest.mark.asyncio

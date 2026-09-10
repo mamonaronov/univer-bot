@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import sqlite3
 import sys
 import time
@@ -375,10 +374,6 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     target = Path(args[0]) if args else Path("data/catalog.sqlite3")
     seed(target)
-    backup = Path("data/catalog.seed.sqlite3")
-    if target.resolve() != backup.resolve():
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target, backup)
     return 0
 
 

@@ -8,15 +8,8 @@ BOT_PID=""
 
 if [ "$(id -u)" = "0" ]; then
   mkdir -p "$DATA_DIR" "$MIHOMO_DIR/providers"
-  if [ ! -s "$DATA_DIR/catalog.sqlite3" ] && [ -f /app/catalog.seed.sqlite3 ]; then
-    cp /app/catalog.seed.sqlite3 "$DATA_DIR/catalog.sqlite3"
-  fi
   chown -R botuser:botuser "$DATA_DIR" "$MIHOMO_DIR"
   exec gosu botuser "$0" "$@"
-fi
-
-if [ ! -s "$DATA_DIR/catalog.sqlite3" ] && [ -f /app/catalog.seed.sqlite3 ]; then
-  cp /app/catalog.seed.sqlite3 "$DATA_DIR/catalog.sqlite3"
 fi
 
 term() {

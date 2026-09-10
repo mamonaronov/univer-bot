@@ -132,7 +132,7 @@ async def run() -> None:
     set_dead_proxy_handler(rotator.kick_current)
 
     try:
-        ensure_catalog(config.db_path, config.seed_db_path)
+        ensure_catalog(config.db_path)
         session = _bot_session(config.telegram_proxy_url)
     except (ConfigError, CatalogError) as exc:
         print(str(exc), file=sys.stderr)

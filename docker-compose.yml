@@ -9,7 +9,6 @@ services:
     environment:
       TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-socks5://127.0.0.1:11808}
       DB_PATH: /app/data/catalog.sqlite3
-      SEED_DB_PATH: /app/catalog.seed.sqlite3
     volumes:
       - ./data:/app/data
       - ./mihomo-data:/app/mihomo/providers

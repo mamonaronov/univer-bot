@@ -14,7 +14,6 @@ def _config(tmp_path: Path) -> Config:
     return Config(
         bot_token="123456:ABC",
         db_path=tmp_path / "catalog.sqlite3",
-        seed_db_path=tmp_path / "seed.sqlite3",
         log_level="INFO",
         telegram_proxy_url="socks5://127.0.0.1:11808",
         probe_interval_seconds=30,
