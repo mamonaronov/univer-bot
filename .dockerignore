@@ -4,7 +4,6 @@
 __pycache__
 *.pyc
 .env
-data/catalog.sqlite3
 data/catalog.sqlite3-*
 mihomo-data
 tests
