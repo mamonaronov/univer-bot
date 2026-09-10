@@ -1,0 +1,11 @@
+.git
+.github
+.pytest_cache
+__pycache__
+*.pyc
+.env
+data/catalog.sqlite3
+data/catalog.sqlite3-*
+mihomo-data
+tests
+README.md
