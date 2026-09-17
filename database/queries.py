@@ -118,7 +118,11 @@ class Catalog:
         words = expand(normalize(query))
         if not words:
             return []
-
+        query_lower = query.lower()
+        campus_boost_words: list[str] = []
+        for marker, words in CAMPUS_MARKERS.items():
+            if marker in query_lower:
+                campus_boost_words.extend(words)
         conn = await self._conn()
         sql = """
             SELECT id, parent_id, title, body, sort_order, source_url,
