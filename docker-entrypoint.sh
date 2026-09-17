@@ -71,17 +71,27 @@ except OSError:
 if not secret:
     print("mihomo API secret missing; bot will retry Telegram")
 else:
-    for _ in range(45):
+    def group(name):
         req = urllib.request.Request(
-            "http://127.0.0.1:19090/proxies/AUTO",
+            f"http://127.0.0.1:19090/proxies/{name}",
             headers={"Authorization": f"Bearer {secret}"},
         )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            return json.load(resp)
+
+    def leaves(name):
+        data = group(name)
+        now = data.get("now") if isinstance(data, dict) else None
+        nodes = data.get("all") if isinstance(data, dict) else None
+        if not isinstance(now, str) or not now or not isinstance(nodes, list) or not nodes:
+            return None
+        return now, nodes
+
+    for _ in range(45):
         try:
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                data = json.load(resp)
-            now = data.get("now") if isinstance(data, dict) else None
-            nodes = data.get("all") if isinstance(data, dict) else None
-            if isinstance(now, str) and now and isinstance(nodes, list) and nodes:
+            ready = leaves("FAST") or leaves("BACKUP")
+            if ready:
+                now, nodes = ready
                 print(f"mihomo AUTO ready node={now} proxies={len(nodes)}")
                 break
         except Exception:
