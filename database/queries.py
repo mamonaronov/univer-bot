@@ -8,6 +8,7 @@ import aiosqlite
 
 from database.db import Database
 
+from services.synonyms import expand, normalize
 
 @dataclass(frozen=True, slots=True)
 class Page:
@@ -111,3 +112,41 @@ class Catalog:
         )
         rows = await cur.fetchall()
         return [Link(id=row["id"], title=row["title"], url=row["url"]) for row in rows]
+
+    async def search(self, query: str, limit: int = 5) -> list[Page]:
+        """Поиск по title/body с синонимами. Возвращает Page, отсортированные по score."""
+        words = expand(normalize(query))
+        if not words:
+            return []
+
+        conn = await self._conn()
+        sql = """
+            SELECT id, parent_id, title, body, sort_order, source_url,
+                   (CASE WHEN LOWER(title) LIKE ? THEN 3 ELSE 0 END) +
+                   (CASE WHEN LOWER(body)  LIKE ? THEN 1 ELSE 0 END) AS score
+            FROM pages
+            WHERE is_visible = 1
+              AND (LOWER(title) LIKE ? OR LOWER(body) LIKE ?)
+            LIMIT 50
+        """
+        best: dict[int, tuple[int, Page]] = {}
+        for word in words:
+            pattern = f"%{word}%"
+            cur = await conn.execute(sql, (pattern, pattern, pattern, pattern))
+            rows = await cur.fetchall()
+            for row in rows:
+                page = Page(
+                    id=row["id"],
+                    parent_id=row["parent_id"],
+                    title=row["title"] or "",
+                    body=row["body"] or "",
+                    sort_order=row["sort_order"],
+                    source_url=row["source_url"],
+                )
+                score = int(row["score"])
+                current = best.get(page.id)
+                if current is None or score > current[0]:
+                    best[page.id] = (score, page)
+
+        ranked = sorted(best.values(), key=lambda item: (-item[0], item[1].id))
+        return [page for _, page in ranked[:limit]]
