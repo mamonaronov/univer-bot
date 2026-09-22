@@ -8,7 +8,7 @@ import aiosqlite
 
 from database.db import Database
 
-from services.synonyms import expand, normalize
+from services.synonyms import CAMPUS_MARKERS, expand, normalize
 
 @dataclass(frozen=True, slots=True)
 class Page:
