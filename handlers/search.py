@@ -101,14 +101,17 @@ def _with_alternatives(
     markup: InlineKeyboardMarkup,
     alternatives: list[Page],
 ) -> InlineKeyboardMarkup:
-    """Добавляет сверху ряд кнопок «возможно, вы искали»."""
+    """Добавляет сверху заголовок и ряд кнопок «возможно, вы искали»."""
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="🔎 Возможно, вы искали:",
+        callback_data="noop",
+    ))
     for alt in alternatives:
         builder.row(InlineKeyboardButton(
-            text=_short(alt.title),
+            text=f"🔎 {_short(alt.title)}",
             callback_data=f"p:{alt.id}:0",
         ))
-    # Кнопки из исходной клавиатуры переносим ниже.
     for row in markup.inline_keyboard:
         builder.row(*row)
     return builder.as_markup()

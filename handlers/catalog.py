@@ -139,3 +139,6 @@ def _strip_tags(text: str) -> str:
         .replace("&gt;", ">")
         .replace("&quot;", '"')
     )
+@router.callback_query(F.data == "noop")
+async def noop_callback(callback: CallbackQuery) -> None:
+    await callback.answer()
