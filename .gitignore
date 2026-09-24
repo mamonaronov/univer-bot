@@ -8,3 +8,5 @@ __pycache__/
 data/catalog.sqlite3-*
 mihomo-data/
 *.log
+.idea/
+*.iml

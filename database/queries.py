@@ -118,39 +118,49 @@ class Catalog:
         words = expand(normalize(query))
         if not words:
             return []
+
         query_lower = query.lower()
         campus_boost_words: list[str] = []
-        for marker, words in CAMPUS_MARKERS.items():
+        for marker, marker_words in CAMPUS_MARKERS.items():
             if marker in query_lower:
-                campus_boost_words.extend(words)
+                campus_boost_words.extend(marker_words)
+
         conn = await self._conn()
-        sql = """
-            SELECT id, parent_id, title, body, sort_order, source_url,
-                   (CASE WHEN LOWER(title) LIKE ? THEN 3 ELSE 0 END) +
-                   (CASE WHEN LOWER(body)  LIKE ? THEN 1 ELSE 0 END) AS score
+        cur = await conn.execute(
+            """
+            SELECT id, parent_id, title, body, sort_order, source_url
             FROM pages
             WHERE is_visible = 1
-              AND (LOWER(title) LIKE ? OR LOWER(body) LIKE ?)
-            LIMIT 50
-        """
-        best: dict[int, tuple[int, Page]] = {}
-        for word in words:
-            pattern = f"%{word}%"
-            cur = await conn.execute(sql, (pattern, pattern, pattern, pattern))
-            rows = await cur.fetchall()
-            for row in rows:
-                page = Page(
+            """
+        )
+        rows = await cur.fetchall()
+
+        scored: list[tuple[int, Page]] = []
+        for row in rows:
+            title_l = (row["title"] or "").lower()
+            body_l = (row["body"] or "").lower()
+
+            score = 0
+            for w in words:
+                wl = w.lower()
+                if wl in title_l:
+                    score += 10
+                elif wl in body_l:
+                    score += 1
+
+            for w in campus_boost_words:
+                if w.lower() in body_l:
+                    score += 5
+
+            if score > 0:
+                scored.append((score, Page(
                     id=row["id"],
                     parent_id=row["parent_id"],
                     title=row["title"] or "",
                     body=row["body"] or "",
                     sort_order=row["sort_order"],
                     source_url=row["source_url"],
-                )
-                score = int(row["score"])
-                current = best.get(page.id)
-                if current is None or score > current[0]:
-                    best[page.id] = (score, page)
+                )))
 
-        ranked = sorted(best.values(), key=lambda item: (-item[0], item[1].id))
-        return [page for _, page in ranked[:limit]]
+        scored.sort(key=lambda item: (-item[0], item[1].id))
+        return [page for _, page in scored[:limit]]

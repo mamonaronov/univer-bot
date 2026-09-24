@@ -23,14 +23,25 @@ router = Router(name="search")
 async def smart_search(message: Message, catalog: Catalog) -> None:
     query = (message.text or "").strip()
     if len(query) < 2:
+        await _show_menu(message, catalog)
         return
 
     hits = await catalog.search(query)
     if not hits:
+        logger.info("search miss chat_id=%s query=%r", message.chat.id, query)
+        await _show_menu(message, catalog)
         return
 
-    logger.info("search hit chat_id=%s query=%r", message.chat.id, query)
+    logger.info("search hit chat_id=%s query=%r page=%s", message.chat.id, query, hits[0].id)
     await _show_page(message, catalog, hits[0])
+
+
+async def _show_menu(target: Message, catalog: Catalog) -> None:
+    root = await catalog.get_page(await catalog.root_id())
+    if root is None:
+        await target.answer("Раздел не найден. Нажмите /start")
+        return
+    await _show_page(target, catalog, root)
 
 
 async def _show_page(target: Message, catalog: Catalog, page: Page) -> None:

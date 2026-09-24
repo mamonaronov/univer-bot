@@ -8,3 +8,5 @@ data/catalog.sqlite3-*
 mihomo-data
 tests
 README.md
+.idea/
+
