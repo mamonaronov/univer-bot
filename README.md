@@ -61,7 +61,7 @@ python -m catalog.seed
 
 Внутри контейнера:
 
-1. стартует `mihomo -d /app/mihomo` (конфиг `deploy/mihomo/config.yaml`);
+1. стартует `mihomo -d /app/mihomo` (конфиг `deploy/mihomo/config.yaml`, та же схема, что в [mihomo-proxy](https://github.com/mamonaronov/mihomo-proxy): url-test группы `AUTO` по подпискам sub1–sub5, DNS через DoH по IP);
 2. mixed-port `127.0.0.1:11808`;
 3. бот использует `TELEGRAM_PROXY_URL=socks5://127.0.0.1:11808`.
 

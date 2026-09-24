@@ -89,7 +89,7 @@ else:
 
     for _ in range(45):
         try:
-            ready = leaves("FAST") or leaves("BACKUP")
+            ready = leaves("AUTO")
             if ready:
                 now, nodes = ready
                 print(f"mihomo AUTO ready node={now} proxies={len(nodes)}")

@@ -1,23 +1,17 @@
 # Mihomo (Clash Meta) — headless client for the handbook bot.
 # Copied into the image as /app/mihomo/config.yaml (see Dockerfile).
-# Ports are offset from v2rayN defaults so both can run on the same host:
-#   v2rayN  SOCKS/HTTP  10808 / 10809
-#   mihomo  mixed       11808
-#   mihomo  API         19090
+# Routing schema matches github.com/mamonaronov/mihomo-proxy config.yaml
+# (commit: one url-test over sub1…sub5, DoH by IP).
+# Ports stay on localhost: mihomo shares this container and is not published.
+#   mihomo  mixed       127.0.0.1:11808
+#   mihomo  API         127.0.0.1:19090
 #
 # Apply: docker compose up -d --build
 #
-# Add a VLESS/SS subscription: duplicate a subN block (name / url / path / prefix)
-# and append it under FAST.use (curated) or BACKUP.use (pool). Do not put
-# whitelist CIDR/SNI on the bot path.
-#
-# FAST is url-test of sub3: sit on the lowest Telegram RTT among curated nodes.
-# BACKUP is fallback of sub1/sub2: on a dead FAST node, try the next leaf
-# immediately instead of waiting for a full url-test pass. AUTO is fallback
-# FAST→BACKUP so a healthy FAST keeps the fast node; a dead FAST group walks
-# BACKUP on the same request.
-# Provider pulls use SUBSCRIBE: DIRECT first, AUTO if GitHub is blocked.
-# Do not point providers at AUTO alone — that deadlocks when the tunnel is down.
+# AUTO = url-test(sub1+sub2+sub3+sub4+sub5). No FAST/BACKUP split, no WHITELIST.
+# Region exclude is off — Anycast and expire rows only. Bot API health: HTTP 404.
+# Providers use SUBSCRIBE: DIRECT first, AUTO if GitHub is blocked.
+# Do not point providers at AUTO alone — deadlock when the tunnel is down.
 # Cached provider YAML still works if both DIRECT and AUTO fail.
 
 mixed-port: 11808
@@ -44,13 +38,18 @@ profile:
 dns:
   enable: true
   ipv6: false
+  # SOCKS bots need real IPs. fake-ip is for TUN on a laptop.
   enhanced-mode: redir-host
-  nameserver:
-    - 8.8.8.8
+  # IP-literal DoH: no UDP/53 bootstrap, so RU hijack cannot poison dns.google.
+  default-nameserver:
     - 1.1.1.1
+    - 8.8.8.8
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://8.8.8.8/dns-query
   fallback:
-    - tls://1.1.1.1
-    - tls://8.8.8.8
+    - https://1.0.0.1/dns-query
+    - https://8.8.4.4/dns-query
   fallback-filter:
     geoip: false
 
@@ -59,7 +58,7 @@ proxy-providers:
     type: http
     url: "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/BLACK_VLESS_RUS.txt"  #Черные Списки VLESS / Все конфиги
     path: ./providers/sub1.yaml
-    interval: 900 # раз в 15 мин 3600-час
+    interval: 900
     size-limit: 10485760
     proxy: SUBSCRIBE
     header:
@@ -175,120 +174,27 @@ proxy-providers:
       udp: true
     exclude-filter: "(?i)expire|expiring|traffic|remain|剩余|流量|过期|官网|套餐|到期|重置|订阅"
 
-  # sub6:
-  #   type: http
-  #   url: "REPLACE_ME_SUB6"
-  #   path: ./providers/sub6.yaml
-  #   interval: 3600
-  #   size-limit: 10485760
-  #   proxy: SUBSCRIBE
-  #   header:
-  #     User-Agent:
-  #       - "clash.meta"
-  #       - "mihomo"
-  #       - "clash-verge"
-  #   health-check:
-  #     enable: true
-  #     url: https://www.gstatic.com/generate_204
-  #     interval: 600
-  #     timeout: 4000
-  #     lazy: false
-  #     expected-status: 204
-  #   override:
-  #     additional-prefix: "s6 | "
-  #     udp: true
-  #   exclude-filter: "(?i)expire|expiring|traffic|remain|剩余|流量|过期|官网|套餐|到期|重置|订阅"
-
-  # sub7:
-  #   type: http
-  #   url: "REPLACE_ME_SUB7"
-  #   path: ./providers/sub7.yaml
-  #   interval: 3600
-  #   size-limit: 10485760
-  #   proxy: SUBSCRIBE
-  #   header:
-  #     User-Agent:
-  #       - "clash.meta"
-  #       - "mihomo"
-  #       - "clash-verge"
-  #   health-check:
-  #     enable: true
-  #     url: https://www.gstatic.com/generate_204
-  #     interval: 600
-  #     timeout: 4000
-  #     lazy: false
-  #     expected-status: 204
-  #   override:
-  #     additional-prefix: "s7 | "
-  #     udp: true
-  #   exclude-filter: "(?i)expire|expiring|traffic|remain|剩余|流量|过期|官网|套餐|到期|重置|订阅"
-
-  # sub8:
-  #   type: http
-  #   url: "REPLACE_ME_SUB8"
-  #   path: ./providers/sub8.yaml
-  #   interval: 3600
-  #   size-limit: 10485760
-  #   proxy: SUBSCRIBE
-  #   header:
-  #     User-Agent:
-  #       - "clash.meta"
-  #       - "mihomo"
-  #       - "clash-verge"
-  #   health-check:
-  #     enable: true
-  #     url: https://www.gstatic.com/generate_204
-  #     interval: 600
-  #     timeout: 4000
-  #     lazy: false
-  #     expected-status: 204
-  #   override:
-  #     additional-prefix: "s8 | "
-  #     udp: true
-  #   exclude-filter: "(?i)expire|expiring|traffic|remain|剩余|流量|过期|官网|套餐|到期|重置|订阅"
-
 proxy-groups:
   # Real Bot API: GET /bot is 404 JSON. 200/301/302 matches DPI redirects.
   # Provider health-checks still use gstatic for general liveness.
-  # sub4/sub5 are whitelist — they look fast on Google/DPI and cannot carry
-  # Bot API; keep them off the bot path.
-  - name: FAST
+  # All live providers compete in AUTO; url-test should drop nodes that
+  # look fast on Google/DPI but cannot carry Bot API.
+  - name: AUTO
     type: url-test
     use:
+      - sub1
+      - sub2
       - sub3
+      - sub4
+      - sub5
     url: https://api.telegram.org/bot
-    interval: 120
+    interval: 30
     timeout: 4000
     tolerance: 100
     lazy: false
     max-failed-times: 1
     expected-status: 404
-    exclude-filter: "(?i)expire|expiring|traffic|remain|剩余|流量|过期|官网|套餐|到期|重置|订阅|Anycast|Singapore|Hong Kong|HongKong|Thailand|Bangkok|Canada|Korea|Japan|Australia|Brazil|India|United States|\\bUSA\\b|🇭🇰|🇸🇬|🇹🇭|🇨🇦|🇰🇷|🇯🇵|🇦🇺|🇧🇷|🇮🇳|🇺🇸"
-
-  - name: BACKUP
-    type: fallback
-    use:
-      - sub1
-      - sub2
-    url: https://api.telegram.org/bot
-    interval: 300
-    timeout: 4000
-    lazy: true
-    max-failed-times: 1
-    expected-status: 404
     exclude-filter: "(?i)expire|expiring|traffic|remain|剩余|流量|过期|官网|套餐|到期|重置|订阅|Anycast"
-
-  - name: AUTO
-    type: fallback
-    proxies:
-      - FAST
-      - BACKUP
-    url: https://api.telegram.org/bot
-    interval: 30
-    timeout: 4000
-    lazy: false
-    max-failed-times: 1
-    expected-status: 404
 
   - name: SUBSCRIBE
     type: fallback
@@ -304,17 +210,10 @@ proxy-groups:
     lazy: false
     max-failed-times: 1
 
-  - name: WHITELIST
-    type: select
-    use:
-      - sub4
-      - sub5
-
   - name: PROXY
     type: select
     proxies:
       - AUTO
-      - WHITELIST
       - DIRECT
 
 rules:
