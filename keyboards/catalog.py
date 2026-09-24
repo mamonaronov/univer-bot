@@ -44,7 +44,7 @@ def page_keyboard(
     if page.parent_id is not None:
         bottom.append(InlineKeyboardButton(text="‹ Назад", callback_data=f"p:{page.parent_id}:0"))
     if page.id != root_id:
-        bottom.append(InlineKeyboardButton(text="В начало", callback_data=f"p:{root_id}:0"))
+        bottom.append(InlineKeyboardButton(text="🏠 В меню", callback_data=f"p:{root_id}:0"))
     if bottom:
         builder.row(*bottom)
     return builder.as_markup()
